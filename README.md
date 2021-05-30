@@ -1,4 +1,17 @@
-InstallCert.java
+# IntelliCert
+
+A small program which creates a JKS(Java keystore) that can be directly used in Java code to connect to a ssl endpoint.
+
+Steps to be followed:
+ * Download this repo on your local.
+ * Compile this code.
+ * Run this code while providing domain name and port.
+ * It generates a keystore file with all required certificates.
+ * Import keystore in your project and create and pass SSL Context.
+  
+ This saves a lot of efforts when connecting to remove systems such as webserver, api gateways, databases (mysql, mongodb, etc) over tls. Especially solves issues when connecting to cloud based solutions - AWS, Azure, etc.
+
+## Introduction
 
 Java program written by Andreas Sterbenz, and posted on a blog in Oct, 2006:
 https://blogs.oracle.com/gc/entry/unable_to_find_valid_certification
@@ -13,16 +26,16 @@ javac InstallCert.java
 Note: since java 11, you can run it directly without compiling it first:
 java --source 11 InstallCert.java <args>
 
-# Access server, and retrieve certificate (accept default certificate 1)
+### Access server, and retrieve certificate (accept default certificate 1)
 java InstallCert [--proxy=proxyHost:proxyPort] <host>[:port] [passphrase]
 
-# Extract certificate from created jssecacerts keystore
+### Extract certificate from created jssecacerts keystore
 keytool -exportcert -alias [host]-1 -keystore jssecacerts -storepass changeit -file [host].cer
 
-# Import certificate into system keystore
+### Import certificate into system keystore
 keytool -importcert -alias [host] -keystore [path to system keystore] -storepass changeit -file [host].cer
 
-# Example:
+## Example:
 java InstallCert woot.com:443
 
     Loading KeyStore /usr/lib/jvm/java-6-sun-1.6.0.26/jre/lib/security/cacerts...
@@ -70,3 +83,46 @@ keytool -exportcert -alias woot.com-1 -keystore jssecacerts -storepass changeit 
 yes
 
     Certificate was added to keystore
+
+## Using generated keystore in Spring boot project
+
+Copy jssecacerts.jks in resource folder of Spring boot project.
+Create following MongoClient in Configuration extending AbstractMongoClientConfiguration.
+    
+    @Value("${mongo.config.connectionString}")
+    private String connectionString;
+    
+    @Value("${mongo.config.keystore.password}")
+    private String keyStorePassword;
+
+    public MongoClient mongoClient() {
+
+    File file = ResourceUtils.getFile("classpath:jssecacerts.jks");
+    InputStream inputStream = new FileInputStream(file);
+
+    KeyStore keyStore = KeyStore.getInstance("JKS");
+    keyStore.load(inputStream, keyStorePassword.toCharArray());
+
+    TrustManagerFactory trustManagerFactory = TrustManagerFactory
+        .getInstance(TrustManagerFactory.getDefaultAlgorithm());
+    trustManagerFactory.init(keyStore);
+
+    SSLContext sslContext = SSLContext.getInstance("TLS");
+    sslContext.init(null, trustManagerFactory.getTrustManagers(), null);
+
+    MongoClientSettings mongoClientSettings = MongoClientSettings.builder()
+        .applyToSslSettings(builder -> {builder.enabled(true).invalidHostNameAllowed(true).context(sslContext);})
+        .applyConnectionString(new ConnectionString(connectionString))
+        .build();
+
+    return MongoClients.create(mongoClientSettings);
+        
+    }
+
+## Other relevant tools
+
+Keystore Explorer for creating Java Keystore manually:
+
+https://braytons.medium.com/importing-aws-rds-pem-certificate-to-java-keystore-using-keystore-explorer-606a5a5236fa
+http://keystore-explorer.org/downloads.html
+    
